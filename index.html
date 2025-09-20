@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Upload or Record & Upload to Cloudinary</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    video, img { margin-top: 10px; border: 1px solid #ccc; border-radius: 6px; }
+    button { margin: 5px; padding: 8px 12px; }
+  </style>
+</head>
+<body>
+  <h2>Upload or Record Video/Image</h2>
+
+  <!-- Option 1: Upload File -->
+  <h3>📂 Upload from Device</h3>
+  <input type="file" id="fileInput" accept="image/*,video/*">
+  <button onclick="uploadFile()">Upload</button>
+  <p id="statusUpload"></p>
+  <div id="previewUpload"></div>
+
+  <hr>
+
+  <!-- Option 2: Record Video -->
+  <h3>🎥 Record from Camera (Selfie)</h3>
+  <video id="camera" width="400" autoplay muted playsinline></video><br>
+  <button id="startCamera">Start Camera</button>
+  <button id="startRecord" disabled>Start Recording</button>
+  <button id="stopRecord" disabled>Stop Recording</button>
+  <button id="uploadBtn" disabled>Upload Recording</button>
+  <p id="statusRecord"></p>
+  <div id="previewRecord"></div>
+
+  <script>
+    // ========= Cloudinary Config =========
+    const cloudName = "dhjhpu2mh"; // replace
+    const uploadPreset = "demo_preset"; // replace
+    const uploadUrl = `https://api.cloudinary.com/v1_1/${cloudName}/upload`;
+
+    // ========= File Upload =========
+    async function uploadFile() {
+      const fileInput = document.getElementById("fileInput");
+      const file = fileInput.files[0];
+      if (!file) return alert("Please choose a file!");
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("upload_preset", uploadPreset);
+
+      document.getElementById("statusUpload").textContent = "Uploading...";
+
+      try {
+        const res = await fetch(uploadUrl, { method: "POST", body: formData });
+        const data = await res.json();
+
+        if (data.secure_url) {
+          document.getElementById("statusUpload").textContent = "Upload complete!";
+          const previewDiv = document.getElementById("previewUpload");
+          if (file.type.startsWith("image/")) {
+            previewDiv.innerHTML = `<img src="${data.secure_url}" width="400">`;
+          } else if (file.type.startsWith("video/")) {
+            previewDiv.innerHTML = `<video controls width="400">
+              <source src="${data.secure_url}" type="${file.type}">
+            </video>`;
+          }
+          previewDiv.innerHTML += `<p><a href="${data.secure_url}" target="_blank">${data.secure_url}</a></p>`;
+        } else {
+          document.getElementById("statusUpload").textContent = "Error: " + JSON.stringify(data);
+        }
+      } catch (err) {
+        document.getElementById("statusUpload").textContent = "Upload failed!";
+        console.error(err);
+      }
+    }
+
+    // ========= Camera Recording =========
+    let mediaStream;
+    let mediaRecorder;
+    let recordedChunks = [];
+    let recordedBlob;
+
+    const camera = document.getElementById("camera");
+    const startCameraBtn = document.getElementById("startCamera");
+    const startRecordBtn = document.getElementById("startRecord");
+    const stopRecordBtn = document.getElementById("stopRecord");
+    const uploadBtn = document.getElementById("uploadBtn");
+
+    // Start Camera (selfie if available)
+    startCameraBtn.onclick = async () => {
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" },
+          audio: true
+        });
+        camera.srcObject = mediaStream;
+        startRecordBtn.disabled = false;
+      } catch (err) {
+        alert("Camera access denied: " + err.message);
+      }
+    };
+
+    // Start Recording
+    startRecordBtn.onclick = () => {
+      recordedChunks = [];
+      mediaRecorder = new MediaRecorder(mediaStream, { mimeType: "video/webm" });
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        recordedBlob = new Blob(recordedChunks, { type: "video/webm" });
+        const videoURL = URL.createObjectURL(recordedBlob);
+
+        document.getElementById("previewRecord").innerHTML = `
+          <h4>Recorded Video:</h4>
+          <video controls width="400" playsinline>
+            <source src="${videoURL}" type="video/webm">
+          </video>`;
+        uploadBtn.disabled = false;
+      };
+
+      mediaRecorder.start();
+      startRecordBtn.disabled = true;
+      stopRecordBtn.disabled = false;
+    };
+
+    // Stop Recording
+    stopRecordBtn.onclick = () => {
+      mediaRecorder.stop();
+      stopRecordBtn.disabled = true;
+      startRecordBtn.disabled = false;
+    };
+
+    // Upload Recording
+    uploadBtn.onclick = async () => {
+      if (!recordedBlob) return alert("No video recorded!");
+
+      const formData = new FormData();
+      formData.append("file", recordedBlob, "recordedVideo.webm");
+      formData.append("upload_preset", uploadPreset);
+
+      document.getElementById("statusRecord").textContent = "Uploading...";
+
+      try {
+        const res = await fetch(uploadUrl, { method: "POST", body: formData });
+        const data = await res.json();
+
+        if (data.secure_url) {
+          document.getElementById("statusRecord").textContent = "Upload complete!";
+          document.getElementById("previewRecord").innerHTML += `
+            <h4>Uploaded to Cloudinary:</h4>
+            <video controls width="400" playsinline>
+              <source src="${data.secure_url}" type="video/webm">
+            </video>
+            <p><a href="${data.secure_url}" target="_blank">${data.secure_url}</a></p>`;
+        } else {
+          document.getElementById("statusRecord").textContent = "Error: " + JSON.stringify(data);
+        }
+      } catch (err) {
+        document.getElementById("statusRecord").textContent = "Upload failed!";
+        console.error(err);
+      }
+    };
+  </script>
+</body>
+</html>
